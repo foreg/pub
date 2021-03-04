@@ -14,7 +14,6 @@ import '../exit_codes.dart' as exit_codes;
 import '../http.dart';
 import '../io.dart';
 import '../log.dart' as log;
-import '../oauth2.dart' as oauth2;
 import '../utils.dart';
 import '../validator.dart';
 
@@ -73,37 +72,35 @@ class LishCommand extends PubCommand {
   Future<void> _publish(List<int> packageBytes) async {
     Uri cloudStorageUrl;
     try {
-      await oauth2.withClient(cache, (client) {
-        return log.progress('Uploading', () async {
-          // TODO(nweiz): Cloud Storage can provide an XML-formatted error. We
-          // should report that error and exit.
-          var newUri = server.resolve('/api/packages/versions/new');
-          var response = await client.get(newUri, headers: pubApiHeaders);
-          var parameters = parseJsonResponse(response);
+      return log.progress('Uploading', () async {
+        // TODO(nweiz): Cloud Storage can provide an XML-formatted error. We
+        // should report that error and exit.
+        var newUri = server.resolve('/api/packages/versions/new');
+        var response = await httpClient.get(newUri, headers: pubApiHeaders);
+        var parameters = parseJsonResponse(response);
 
-          var url = _expectField(parameters, 'url', response);
-          if (url is! String) invalidServerResponse(response);
-          cloudStorageUrl = Uri.parse(url);
-          var request = http.MultipartRequest('POST', cloudStorageUrl);
+        var url = _expectField(parameters, 'url', response);
+        if (url is! String) invalidServerResponse(response);
+        cloudStorageUrl = Uri.parse(url);
+        var request = http.MultipartRequest('POST', cloudStorageUrl);
 
-          var fields = _expectField(parameters, 'fields', response);
-          if (fields is! Map) invalidServerResponse(response);
-          fields.forEach((key, value) {
-            if (value is! String) invalidServerResponse(response);
-            request.fields[key] = value;
-          });
-
-          request.followRedirects = false;
-          request.files.add(http.MultipartFile.fromBytes('file', packageBytes,
-              filename: 'package.tar.gz'));
-          var postResponse =
-              await http.Response.fromStream(await client.send(request));
-
-          var location = postResponse.headers['location'];
-          if (location == null) throw PubHttpException(postResponse);
-          handleJsonSuccess(
-              await client.get(Uri.parse(location), headers: pubApiHeaders));
+        var fields = _expectField(parameters, 'fields', response);
+        if (fields is! Map) invalidServerResponse(response);
+        fields.forEach((key, value) {
+          if (value is! String) invalidServerResponse(response);
+          request.fields[key] = value;
         });
+
+        request.followRedirects = false;
+        request.files.add(http.MultipartFile.fromBytes('file', packageBytes,
+            filename: 'package.tar.gz'));
+        var postResponse =
+            await http.Response.fromStream(await httpClient.send(request));
+
+        var location = postResponse.headers['location'];
+        if (location == null) throw PubHttpException(postResponse);
+        handleJsonSuccess(
+            await httpClient.get(Uri.parse(location), headers: pubApiHeaders));
       });
     } on PubHttpException catch (error) {
       var url = error.response.request.url;
